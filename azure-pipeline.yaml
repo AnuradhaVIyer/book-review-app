@@ -18,7 +18,7 @@ stages:
           - script: |
               sudo apt update
               sudo apt install -y ansible sshpass
-            displayName: "Install Ansible & SSH dependencies"
+            displayName: "Install Ansible & SSH dependencies in VM"
 
           - task: DownloadSecureFile@1
             name: download_ssh_key
