@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: book-review-backend
+  namespace: book-review
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal # or internet-facing if public
+spec:
+  type: ClusterIP
+  selector:
+    app: book-review-backend
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3001
