@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: book-review-backend
+  namespace: book-review
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: book-review-backend
+  template:
+    metadata:
+      labels:
+        app: book-review-backend
+    spec:
+      containers:
+        - name: backend
+          image: REPLACE_BACKEND_IMAGE  # will be overridden by kubectl set image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - secretRef:
+                name: book-review-backend-env
