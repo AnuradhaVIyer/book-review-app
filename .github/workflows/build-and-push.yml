@@ -1,12 +1,12 @@
 name: Build and Push Images
 
 on:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - ".github/workflows/build-and-push.yml"
+  workflow_dispatch:
+#  push:
+#   branches: [ "main" ] #  paths:
+#      - "backend/**"
+#      - "frontend/**"
+#      - ".github/workflows/build-and-push.yml"
 
 permissions:
   id-token: write
