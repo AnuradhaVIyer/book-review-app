@@ -30,6 +30,24 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity --output json
+      
+      - name: Ensure aws CLI v2 is available (optional)
+        run: aws --version
+      
+      - name: Update kubeconfig for EKS
+        run: |
+          # if you need to assume a cross-account role to access EKS, add --role-arn
+          aws eks update-kubeconfig --region "${{ secrets.AWS_REGION }}" --name "${{ secrets.EKS_CLUSTER_NAME }}"
+          echo "kubeconfig written to $(kubectl config view --minify | grep 'name:' -m1 || true)"
+      
+      - name: Validate kubectl access (fails early if unauthenticated)
+        run: |
+          kubectl config view --minify
+          kubectl version --client
+          kubectl get ns || (kubectl cluster-info && exit 0)  # will show auth error if any
+
       - name: Determine latest backend image in ECR
         id: backend_image
         run: |
