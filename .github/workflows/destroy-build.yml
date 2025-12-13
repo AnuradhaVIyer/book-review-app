@@ -1,0 +1,39 @@
+name: Destroy ECR Images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy-ecr:
+    name: Delete backend & frontend images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Delete backend images
+        run: |
+          echo "Deleting all images from backend repo: ${{ secrets.ECR_BACKEND_REPO }}"
+          aws ecr batch-delete-image \
+            --repository-name "${{ secrets.ECR_BACKEND_REPO }}" \
+            --image-ids $(aws ecr list-images --repository-name "${{ secrets.ECR_BACKEND_REPO }}" --query 'imageIds[*]' --output json) \
+            || echo "No backend images to delete."
+
+      - name: Delete frontend images
+        run: |
+          echo "Deleting all images from frontend repo: ${{ secrets.ECR_FRONTEND_REPO }}"
+          aws ecr batch-delete-image \
+            --repository-name "${{ secrets.ECR_FRONTEND_REPO }}" \
+            --image-ids $(aws ecr list-images --repository-name "${{ secrets.ECR_FRONTEND_REPO }}" --query 'imageIds[*]' --output json) \
+            || echo "No frontend images to delete."
