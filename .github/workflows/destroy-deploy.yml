@@ -1,0 +1,54 @@
+name: Destroy Kubernetes Deployment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy:
+    name: Remove K8s Workloads
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ secrets.AWS_REGION }}" \
+            --name "${{ secrets.EKS_CLUSTER_NAME }}"
+
+      - name: Delete Deployments
+        run: |
+          kubectl delete deployment book-review-backend -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+          kubectl delete deployment book-review-frontend -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+
+      - name: Delete Services
+        run: |
+          kubectl delete service book-review-backend -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+          kubectl delete service book-review-frontend -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+
+      - name: Delete Secrets
+        run: |
+          kubectl delete secret book-review-backend-env -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+
+      - name: Delete Ingress (if exists)
+        run: |
+          kubectl delete ingress book-review-ingress -n ${{ secrets.EKS_NAMESPACE }} --ignore-not-found
+
+      - name: Delete Namespace (optional, safe)
+        run: |
+          kubectl delete namespace ${{ secrets.EKS_NAMESPACE }} --ignore-not-found || true
