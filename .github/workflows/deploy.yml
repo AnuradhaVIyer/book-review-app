@@ -102,6 +102,21 @@ jobs:
         
       - name: Fetch DB parameters from SSM
         run: |
+         DB_HOST=$(aws ssm get-parameter \
+            --name "${{ secrets.DB_HOST }}" \
+            --query Parameter.Value \
+            --output text)
+      
+          DB_NAME=$(aws ssm get-parameter \
+            --name "${{ secrets.DB_NAME }}" \
+            --query Parameter.Value \
+            --output text)
+      
+          DB_USER=$(aws ssm get-parameter \
+            --name "${{ secrets.DB_USERNAME }}" \
+            --query Parameter.Value \
+            --output text)
+            
           DB_PASS=$(aws ssm get-parameter \
             --name "${{ secrets.DB_SSM_PATH }}" \
             --with-decryption \
@@ -112,9 +127,9 @@ jobs:
       
           kubectl create secret generic book-review-backend-env \
             -n book-review \
-            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
-            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
-            --from-literal=DB_USER="${{ secrets.DB_USERNAME }}" \
+            --from-literal=DB_HOST="$DB_HOST" \
+            --from-literal=DB_NAME="$DB_NAME" \
+            --from-literal=DB_USER="$DB_USERNAME" \
             --from-literal=DB_PASS="$DB_PASS" \
             --from-literal=DB_DIALECT="mysql" \
             --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
