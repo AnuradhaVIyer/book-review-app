@@ -97,7 +97,10 @@ jobs:
           kubectl version --client
           kubectl cluster-info || true
 
-      - name: Fetch DB password from SSM
+      - name: Ensure namespace exists
+        run: kubectl apply -f k8s/namespace.yaml
+        
+      - name: Fetch DB parameters from SSM
         run: |
           DB_PASS=$(aws ssm get-parameter \
             --name "${{ secrets.DB_SSM_PATH }}" \
@@ -116,9 +119,6 @@ jobs:
             --from-literal=DB_DIALECT="mysql" \
             --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Ensure namespace exists
-        run: kubectl apply -f k8s/namespace.yaml
 
       - name: Apply manifests
         run: kubectl apply -n ${EKS_NAMESPACE} -f k8s/
