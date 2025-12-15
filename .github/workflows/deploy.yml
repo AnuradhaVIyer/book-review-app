@@ -124,6 +124,10 @@ jobs:
             --output text)
       
           echo "DB_PASS=$DB_PASS" >> $GITHUB_ENV
+          echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "DB_HOST=$DB_HOST" >> $GITHUB_ENV
+          
       
           kubectl create secret generic book-review-backend-env \
             -n book-review \
