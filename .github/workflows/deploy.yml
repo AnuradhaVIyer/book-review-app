@@ -20,6 +20,7 @@ jobs:
       EKS_NAMESPACE: ${{ secrets.EKS_NAMESPACE }}
       BACKEND_REPO: ${{ secrets.ECR_BACKEND_REPO }}
       FRONTEND_REPO: ${{ secrets.ECR_FRONTEND_REPO }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,124 +31,87 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity --output json
-      
-      - name: Ensure aws CLI v2 is available (optional)
-        run: aws --version
-      
-      - name: Update kubeconfig for EKS
-        run: |
-          # if you need to assume a cross-account role to access EKS, add --role-arn
-          aws eks update-kubeconfig --region "${{ secrets.AWS_REGION }}" --name "${{ secrets.EKS_CLUSTER_NAME }}"
-          echo "kubeconfig written to $(kubectl config view --minify | grep 'name:' -m1 || true)"
-      
-      - name: Validate kubectl access (fails early if unauthenticated)
-        run: |
-          kubectl config view --minify
-          kubectl version --client
-          kubectl get ns || (kubectl cluster-info && exit 0)  # will show auth error if any
-
-      - name: Determine latest backend image in ECR
-        id: backend_image
-        run: |
-          # get repository name (strip registry prefix)
-          REPO_NAME=$(basename "${BACKEND_REPO}")
-          # query most recent image (fallback to :latest if no tags)
-          TAG=$(aws ecr describe-images --repository-name "$REPO_NAME" --region "${AWS_REGION}" \
-            --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || true)
-          if [ -z "$TAG" ] || [ "$TAG" = "None" ]; then
-            echo "No tag found, using :latest"
-            IMAGE="${BACKEND_REPO}:latest"
-          else
-            IMAGE="${BACKEND_REPO}:${TAG}"
-          fi
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-      - name: Determine latest frontend image in ECR
-        id: frontend_image
-        run: |
-          REPO_NAME=$(basename "${FRONTEND_REPO}")
-          TAG=$(aws ecr describe-images --repository-name "$REPO_NAME" --region "${AWS_REGION}" \
-            --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || true)
-          if [ -z "$TAG" ] || [ "$TAG" = "None" ]; then
-            IMAGE="${FRONTEND_REPO}:latest"
-          else
-            IMAGE="${FRONTEND_REPO}:${TAG}"
-          fi
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
-        with:
-          version: "latest"
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}"
-
-      - name: Debug AWS identity
-        run: aws sts get-caller-identity --output json
-
-      - name: Describe EKS cluster
-        run: aws eks describe-cluster --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}" --query "cluster.[name,status,endpoint]" --output json
-      
-      - name: Show kubeconfig (minified)
-        run: |
-          kubectl config view --minify
-          kubectl version --client
-          kubectl cluster-info || true
 
       - name: Ensure namespace exists
         run: kubectl apply -f k8s/namespace.yaml
 
+      # ----------------------------------------------------
+      # ✅ STEP 4: Fetch ALB hostname dynamically
+      # ----------------------------------------------------
+      - name: Determine ALB hostname for ALLOWED_ORIGINS
+        run: |
+          echo "Waiting for Ingress ALB hostname..."
+          for i in {1..20}; do
+            ALB_HOST=$(kubectl get ingress book-review-ingress \
+              -n ${EKS_NAMESPACE} \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+            if [ -n "$ALB_HOST" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ -z "$ALB_HOST" ]; then
+            echo "ERROR: ALB hostname not available"
+            exit 1
+          fi
+
+          ALLOWED_ORIGINS="http://localhost:3000,http://${ALB_HOST}"
+          echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}"
+          echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> $GITHUB_ENV
+
+      # ----------------------------------------------------
+      # Fetch DB parameters from SSM
+      # ----------------------------------------------------
       - name: Fetch DB parameters from SSM
         run: |
-           DB_HOST=$(aws ssm get-parameter \
+          DB_HOST=$(aws ssm get-parameter \
             --name "${{ secrets.DB_HOST }}" \
             --query Parameter.Value \
             --output text)
-      
-            DB_NAME=$(aws ssm get-parameter \
+
+          DB_NAME=$(aws ssm get-parameter \
             --name "${{ secrets.DB_NAME }}" \
             --query Parameter.Value \
             --output text)
-      
-            DB_USER=$(aws ssm get-parameter \
+
+          DB_USER=$(aws ssm get-parameter \
             --name "${{ secrets.DB_USERNAME }}" \
             --query Parameter.Value \
             --output text)
-            
-            DB_PASS=$(aws ssm get-parameter \
+
+          DB_PASS=$(aws ssm get-parameter \
             --name "${{ secrets.DB_SSM_PATH }}" \
             --with-decryption \
             --query Parameter.Value \
             --output text)
-      
-            echo "DB_PASS=$DB_PASS" >> $GITHUB_ENV
-            echo "DB_USER=$DB_USER" >> $GITHUB_ENV
-            echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
-            echo "DB_HOST=$DB_HOST" >> $GITHUB_ENV
-      
-            kubectl create secret generic book-review-backend-env \
-              -n book-review \
-              --from-literal=ALLOWED_ORIGINS="*" \
-              --from-literal=DB_HOST="$DB_HOST" \
-              --from-literal=DB_NAME="$DB_NAME" \
-              --from-literal=DB_USER="$DB_USER" \
-              --from-literal=DB_PASS="$DB_PASS" \
-              --from-literal=DB_DIALECT="mysql" \
-              --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-              --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic book-review-backend-env \
+            -n ${EKS_NAMESPACE} \
+            --from-literal=ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
+            --from-literal=DB_HOST="$DB_HOST" \
+            --from-literal=DB_NAME="$DB_NAME" \
+            --from-literal=DB_USER="$DB_USER" \
+            --from-literal=DB_PASS="$DB_PASS" \
+            --from-literal=DB_DIALECT="mysql" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply manifests
         run: kubectl apply -n ${EKS_NAMESPACE} -f k8s/
 
       - name: Update backend image
         run: |
-          IMAGE=${{ steps.backend_image.outputs.image }}
-          kubectl -n ${EKS_NAMESPACE} set image deployment/book-review-backend backend=${IMAGE}
+          kubectl -n ${EKS_NAMESPACE} set image deployment/book-review-backend \
+            backend=${{ steps.backend_image.outputs.image }}
 
       - name: Update frontend image
         run: |
-          IMAGE=${{ steps.frontend_image.outputs.image }}
-          kubectl -n ${EKS_NAMESPACE} set image deployment/book-review-frontend frontend=${IMAGE}
+          kubectl -n ${EKS_NAMESPACE} set image deployment/book-review-frontend \
+            frontend=${{ steps.frontend_image.outputs.image }}
