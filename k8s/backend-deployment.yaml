@@ -22,3 +22,6 @@ spec:
           envFrom:
             - secretRef:
                 name: book-review-backend-env
+
+        - name: ALLOWED_ORIGINS
+           value: "http://localhost:3000,http://k8s-bookrevi-bookrevi-2fff1cb9b0-203347825.us-east-1.elb.amazonaws.com"
