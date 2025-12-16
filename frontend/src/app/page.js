@@ -9,7 +9,7 @@ export default function Home() {
 
   useEffect(() => {
     //axios.get("/api/books") // Ensure correct API call
-    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/books`) // Ensure correct API call
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}api/books`) // Ensure correct API call
       .then(response => {
         setBooks(response.data);
         setLoading(false);
