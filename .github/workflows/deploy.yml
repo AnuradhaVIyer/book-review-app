@@ -3,8 +3,8 @@ name: Deploy to EKS
 on:
   workflow_dispatch:
   workflow_run:
-   workflows: ["Build and Push Images"]
-   types: [completed]
+    workflows: ["Build and Push Images"]
+    types: [completed]
 
 permissions:
   id-token: write
@@ -85,7 +85,6 @@ jobs:
       # Fetch ALB hostname dynamically
       # ----------------------------------------------------
       - name: Determine ALB hostname for ALLOWED_ORIGINS
-        id: fetch_alb
         run: |
           echo "Waiting for Ingress ALB hostname..."
           for i in {1..30}; do
@@ -108,10 +107,6 @@ jobs:
           echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}"
           echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> $GITHUB_ENV
 
-          ALB_URL="http://${ALB_HOST}"
-          echo "Ingress ALB_URL=${ALB_URL}"
-          echo "alb_url=${ALB_URL}" >> $GITHUB_OUTPUT
-
           kubectl create secret generic book-review-backend-env \
             -n ${EKS_NAMESPACE} \
             --from-literal=ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
@@ -130,6 +125,3 @@ jobs:
       - name: Restart backend pods
         run: |
           kubectl -n ${EKS_NAMESPACE} rollout restart deployment/book-review-backend
-        
-      - name: Output ALB URL
-        run: echo "Application is accessible at URL: ${{ steps.fetch_alb.outputs.alb_url }}"
