@@ -17,7 +17,6 @@ spec:
         - name: backend
           image: REPLACE_BACKEND_IMAGE  # will be overridden by kubectl set image
           imagePullPolicy: IfNotPresent
-
           ports:
             - containerPort: 3001
 
