@@ -89,5 +89,3 @@ jobs:
 
       - name: Restart backend
         run: kubectl rollout restart deployment/book-review-backend -n ${EKS_NAMESPACE}
-      - name: Output ALB URL
-        run: echo "Application URL:${{ steps.fetch_alb.outputs.alb_url }}"
