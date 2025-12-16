@@ -17,5 +17,6 @@ COPY . .
 EXPOSE 3000
 
 # Start Next.js in development mode
-CMD ["npm", "run", "dev"]
+RUN npm run build
+CMD ["npm", "start"]
 
