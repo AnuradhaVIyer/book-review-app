@@ -4,7 +4,6 @@ metadata:
   name: book-review-ingress
   namespace: book-review
   annotations:
-    alb.ingress.kubernetes.io/target-type: ip
     kubernetes.io/ingress.class: alb
 
     # Internet-facing ALB
