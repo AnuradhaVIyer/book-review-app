@@ -1,0 +1,63 @@
+name: EKS Access Entry Setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  eks-access-entry:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      GHA_EKS_ROLE_ARN: ${{ secrets.AWS_ROLE_EKS_ARN }}
+    steps:
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_EKS_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Ensure EKS Access Entry exists
+        run: |
+          echo "Checking if access entry exists..."
+          EXISTS=$(aws eks list-access-entries --cluster-name "${EKS_CLUSTER_NAME}" \
+            --query "accessEntries[?principalArn=='${GHA_EKS_ROLE_ARN}'] | length(@)" \
+            --output text)
+          
+          if [ "$EXISTS" -eq 0 ]; then
+            echo "Access entry not found. Creating..."
+            aws eks create-access-entry \
+              --cluster-name "${EKS_CLUSTER_NAME}" \
+              --principal-arn "${GHA_EKS_ROLE_ARN}" \
+              --type STANDARD
+          else
+            echo "Access entry already exists. Skipping creation."
+          fi
+
+      - name: Ensure Access Policy is associated
+        run: |
+          echo "Checking if cluster-admin policy is already associated..."
+          POLICY_EXISTS=$(aws eks list-access-policies --cluster-name "${EKS_CLUSTER_NAME}" \
+            --principal-arn "${GHA_EKS_ROLE_ARN}" \
+            --query "attachedPolicies[?policyArn=='arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'] | length(@)" \
+            --output text)
+          
+          if [ "$POLICY_EXISTS" -eq 0 ]; then
+            echo "Associating cluster-admin policy..."
+            aws eks associate-access-policy \
+              --cluster-name "${EKS_CLUSTER_NAME}" \
+              --principal-arn "${GHA_EKS_ROLE_ARN}" \
+              --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+              --access-scope type=cluster
+          else
+            echo "Policy already associated. Skipping."
+          fi
+
+      - name: Verify Access Entry
+        run: |
+          echo "Listing all access entries for verification..."
+          aws eks list-access-entries --cluster-name "${EKS_CLUSTER_NAME}"
