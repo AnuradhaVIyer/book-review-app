@@ -3,8 +3,6 @@ kind: Service
 metadata:
   name: book-review-frontend
   namespace: book-review
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
 spec:
   type: ClusterIP
   selector:
