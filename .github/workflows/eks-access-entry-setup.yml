@@ -1,4 +1,4 @@
-name: EKS Access Entry Setup
+name: Add GitHub Actions Role to EKS
 
 on:
   workflow_dispatch:
@@ -8,56 +8,44 @@ permissions:
   contents: read
 
 jobs:
-  eks-access-entry:
+  eks-auth:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
       GHA_EKS_ROLE_ARN: ${{ secrets.AWS_ROLE_EKS_ARN }}
     steps:
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_EKS_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Ensure EKS Access Entry exists
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "latest"
+
+      - name: Update kubeconfig
         run: |
-          echo "Checking if access entry exists..."
-          EXISTS=$(aws eks list-access-entries --cluster-name "${EKS_CLUSTER_NAME}" \
-            --query "accessEntries[?principalArn=='${GHA_EKS_ROLE_ARN}'] | length(@)" \
-            --output text)
-          
-          if [ "$EXISTS" -eq 0 ]; then
-            echo "Access entry not found. Creating..."
-            aws eks create-access-entry \
-              --cluster-name "${EKS_CLUSTER_NAME}" \
-              --principal-arn "${GHA_EKS_ROLE_ARN}" \
-              --type STANDARD
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Patch aws-auth ConfigMap
+        run: |
+          # Check if role is already present
+          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "${GHA_EKS_ROLE_ARN}"; then
+            echo "Adding GitHub Actions role to aws-auth ConfigMap..."
+            kubectl patch configmap aws-auth -n kube-system --type=json \
+              -p="[
+                {
+                  \"op\": \"add\",
+                  \"path\": \"/data/mapRoles/-\",
+                  \"value\": \"- rolearn: ${GHA_EKS_ROLE_ARN}\n  username: gha\n  groups:\n    - system:masters\"
+                }
+              ]"
           else
-            echo "Access entry already exists. Skipping creation."
+            echo "Role already exists in aws-auth. Skipping."
           fi
 
-      - name: Ensure Access Policy is associated
-        run: |
-          echo "Checking if cluster-admin policy is already associated..."
-          POLICY_EXISTS=$(aws eks list-access-policies --cluster-name "${EKS_CLUSTER_NAME}" \
-            --principal-arn "${GHA_EKS_ROLE_ARN}" \
-            --query "attachedPolicies[?policyArn=='arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'] | length(@)" \
-            --output text)
-          
-          if [ "$POLICY_EXISTS" -eq 0 ]; then
-            echo "Associating cluster-admin policy..."
-            aws eks associate-access-policy \
-              --cluster-name "${EKS_CLUSTER_NAME}" \
-              --principal-arn "${GHA_EKS_ROLE_ARN}" \
-              --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-              --access-scope type=cluster
-          else
-            echo "Policy already associated. Skipping."
-          fi
-
-      - name: Verify Access Entry
-        run: |
-          echo "Listing all access entries for verification..."
-          aws eks list-access-entries --cluster-name "${EKS_CLUSTER_NAME}"
+      - name: Verify access
+        run: kubectl get ns
