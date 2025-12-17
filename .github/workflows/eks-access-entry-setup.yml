@@ -1,69 +1,32 @@
-name: Deploy to EKS (with aws-auth patch)
+name: EKS-Acess
 
 on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
+  id-token: write # Required for OIDC authentication
   contents: read
 
 jobs:
-  deploy:
+  kube-deploy:
     runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
-      EKS_NAMESPACE: ${{ secrets.EKS_NAMESPACE }}
-      GHA_EKS_ROLE_ARN: ${{ secrets.AWS_ROLE_EKS_ARN }}
-      BACKEND_REPO: ${{ secrets.ECR_BACKEND_REPO }}
-      FRONTEND_REPO: ${{ secrets.ECR_FRONTEND_REPO }}
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_EKS_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }} # Change to your region
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "latest"
-
-      - name: Update kubeconfig
+      - name: Update Kubeconfig
         run: |
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+          aws eks update-kubeconfig --name ${{secrets.EKS_CLUSTER_NAME }} --region ${{secrets.AWS_REGION }}
 
-      - name: Ensure GitHub Actions role is in aws-auth
+      - name: Verify Access
         run: |
-          ROLE_ARN="${GHA_EKS_ROLE_ARN}"
-          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "$ROLE_ARN"; then
-            echo "Adding role to aws-auth..."
-            kubectl patch configmap aws-auth -n kube-system --type=json \
-              -p="[
-                {
-                  \"op\": \"add\",
-                  \"path\": \"/data/mapRoles/-\",
-                  \"value\": \"- rolearn: ${ROLE_ARN}\n  username: gha\n  groups:\n    - system:masters\"
-                }
-              ]"
-          else
-            echo "Role already exists in aws-auth"
-          fi
+          kubectl get nodes
+          kubectl cluster-info
 
-      - name: Verify kubectl access
-        run: kubectl get ns
-
-      - name: Deploy backend image
-        run: |
-          TAG=${GITHUB_SHA::7}
-          IMAGE="${BACKEND_REPO}:${TAG}"
-          kubectl -n "${EKS_NAMESPACE}" set image deployment/book-review-backend backend="${IMAGE}"
-
-      - name: Deploy frontend image
-        run: |
-          TAG=${GITHUB_SHA::7}
-          IMAGE="${FRONTEND_REPO}:${TAG}"
-          kubectl -n "${EKS_NAMESPACE}" set image deployment/book-review-frontend frontend="${IMAGE}"
+     
