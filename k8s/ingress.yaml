@@ -5,36 +5,12 @@ metadata:
   namespace: book-review
   annotations:
     kubernetes.io/ingress.class: alb
-
-    # Internet-facing ALB
     alb.ingress.kubernetes.io/scheme: internet-facing
-
-    # Use IP mode (required for EKS)
     alb.ingress.kubernetes.io/target-type: ip
-
-    # Health check
-    alb.ingress.kubernetes.io/healthcheck-path: /
-
-    # Listener ports
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-
-    # Optional but recommended
-    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true
-
 spec:
   rules:
     - http:
         paths:
-          # Backend API
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: book-review-backend
-                port:
-                  number: 3001
-
-          # Frontend (React / Next.js)
           - path: /
             pathType: Prefix
             backend:
@@ -42,3 +18,10 @@ spec:
                 name: book-review-frontend
                 port:
                   number: 3000
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: book-review-backend
+                port:
+                  number: 3001
