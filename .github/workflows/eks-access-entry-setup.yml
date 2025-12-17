@@ -1,4 +1,4 @@
-name: Add GitHub Actions Role to EKS
+name: Deploy to EKS (with aws-auth patch)
 
 on:
   workflow_dispatch:
@@ -8,13 +8,19 @@ permissions:
   contents: read
 
 jobs:
-  eks-auth:
+  deploy:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      EKS_NAMESPACE: ${{ secrets.EKS_NAMESPACE }}
       GHA_EKS_ROLE_ARN: ${{ secrets.AWS_ROLE_EKS_ARN }}
+      BACKEND_REPO: ${{ secrets.ECR_BACKEND_REPO }}
+      FRONTEND_REPO: ${{ secrets.ECR_FRONTEND_REPO }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -30,22 +36,34 @@ jobs:
         run: |
           aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
 
-      - name: Patch aws-auth ConfigMap
+      - name: Ensure GitHub Actions role is in aws-auth
         run: |
-          # Check if role is already present
-          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "${GHA_EKS_ROLE_ARN}"; then
-            echo "Adding GitHub Actions role to aws-auth ConfigMap..."
+          ROLE_ARN="${GHA_EKS_ROLE_ARN}"
+          if ! kubectl get configmap aws-auth -n kube-system -o yaml | grep -q "$ROLE_ARN"; then
+            echo "Adding role to aws-auth..."
             kubectl patch configmap aws-auth -n kube-system --type=json \
               -p="[
                 {
                   \"op\": \"add\",
                   \"path\": \"/data/mapRoles/-\",
-                  \"value\": \"- rolearn: ${GHA_EKS_ROLE_ARN}\n  username: gha\n  groups:\n    - system:masters\"
+                  \"value\": \"- rolearn: ${ROLE_ARN}\n  username: gha\n  groups:\n    - system:masters\"
                 }
               ]"
           else
-            echo "Role already exists in aws-auth. Skipping."
+            echo "Role already exists in aws-auth"
           fi
 
-      - name: Verify access
+      - name: Verify kubectl access
         run: kubectl get ns
+
+      - name: Deploy backend image
+        run: |
+          TAG=${GITHUB_SHA::7}
+          IMAGE="${BACKEND_REPO}:${TAG}"
+          kubectl -n "${EKS_NAMESPACE}" set image deployment/book-review-backend backend="${IMAGE}"
+
+      - name: Deploy frontend image
+        run: |
+          TAG=${GITHUB_SHA::7}
+          IMAGE="${FRONTEND_REPO}:${TAG}"
+          kubectl -n "${EKS_NAMESPACE}" set image deployment/book-review-frontend frontend="${IMAGE}"
