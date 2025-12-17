@@ -58,7 +58,7 @@ spec:
                   key: JWT_SECRET
 
             - name: ALLOWED_ORIGINS
-              value: "http://localhost:3000,http://k8s-bookrevi-bookrevi-cb971b8e36-1601880200.us-east-1.elb.amazonaws.com"
+              value: "http://localhost:3000,http://k8s-bookrevi-bookrevi-cb971b8e36-1858980771.us-east-1.elb.amazonaws.com"
 
           resources:
             requests:
